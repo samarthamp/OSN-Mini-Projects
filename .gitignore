@@ -1,2 +1,8 @@
 # all files with .out extension
 *.out
+MP-1/myshell
+*.o
+MP-1/trial.c
+MP-1/trial.txt
+MP-1/trial_dir/
+MP-1/newfile.txt
