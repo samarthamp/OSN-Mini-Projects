@@ -119,6 +119,10 @@ struct proc
   uint rtime;                  // How long the process ran for
   uint ctime;                  // When was the process created
   uint etime;                  // When did the process exited
+  
+  // for syscount
+  int sys_mask;                // mask of the syscall to trace
+  int sys_count;               // count of how many times it was called
 };
 
 extern struct proc proc[NPROC];

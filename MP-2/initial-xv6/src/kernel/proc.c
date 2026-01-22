@@ -127,6 +127,10 @@ found:
   p->pid = allocpid();
   p->state = USED;
 
+  // for syscount
+  p->sys_mask = 0;
+  p->sys_count = 0;
+
   // Allocate a trapframe page.
   if ((p->trapframe = (struct trapframe *)kalloc()) == 0)
   {
@@ -319,6 +323,10 @@ int fork(void)
 
   safestrcpy(np->name, p->name, sizeof(p->name));
 
+  // for syscount
+  np->sys_mask = p->sys_mask; // inherit the same mask
+  np->sys_count = 0; // Child starts with 0, will add to parent on exit
+
   pid = np->pid;
 
   release(&np->lock);
@@ -349,6 +357,8 @@ void reparent(struct proc *p)
     }
   }
 }
+
+extern char *syscall_names[]; // access the names of syscalls
 
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
@@ -383,6 +393,34 @@ void exit(int status)
 
   // Parent might be sleeping in wait().
   wakeup(p->parent);
+
+  // for syscount
+  acquire(&p->lock);
+  struct proc *original_parent = p->parent;
+  release(&p->lock);
+  
+  // LOGIC FOR SYSCOUNT
+  if (p->sys_mask) {
+      acquire(&original_parent->lock);
+      if (original_parent->sys_mask == p->sys_mask) {
+          // I am a child being traced. Add my count to parent.
+          original_parent->sys_count += p->sys_count;
+      } else {
+          // I am the top-level tracer. Print the result.
+          // We need to find which bit is set to print the name.
+          int syscall_num = -1;
+          for(int i = 0; i < 32; i++){
+              if((p->sys_mask >> i) & 1){
+                  syscall_num = i;
+                  break;
+              }
+          }
+          if(syscall_num > 0) {
+              printf("PID %d called %s %d times.\n", p->pid, syscall_names[syscall_num], p->sys_count);
+          }
+      }
+      release(&original_parent->lock);
+  }
 
   acquire(&p->lock);
 

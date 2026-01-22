@@ -108,3 +108,15 @@ sys_waitx(void)
     return -1;
   return ret;
 }
+
+uint64
+sys_getSysCount(void)
+{
+  int mask;
+  // Fetch the 1st integer argument
+  argint(0, &mask);
+  
+  myproc()->sys_mask = mask;
+  myproc()->sys_count = 0;
+  return 0;
+}
