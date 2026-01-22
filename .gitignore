@@ -33,3 +33,5 @@ MP-2/initial-xv6/src/user/_wc
 MP-2/initial-xv6/src/user/_zombie
 MP-2/initial-xv6/src/user/initcode
 MP-2/initial-xv6/src/user/_alarmtest
+MP-2/initial-xv6/src/user/_lbstest
+MP-2/initial-xv6/src/user/_mlfqtest

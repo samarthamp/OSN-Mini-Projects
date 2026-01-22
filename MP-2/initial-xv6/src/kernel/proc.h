@@ -130,6 +130,14 @@ struct proc
   int alarm_ticks;             // Ticks passed since last alarm
   struct trapframe *alarm_tf;  // Copy of trapframe to restore after handler
   int alarm_active;            // Flag to prevent re-entrant alarms (handler calling handler)
+
+  // MLFQ fields
+  // int ctime;                   // Creation time (for LBS tie-breaking)
+  int tickets;                 // Number of Lottery tickets
+  
+  int priority;                // MLFQ Priority (0-3)
+  int ticks_consumed;          // Ticks used in current priority queue
+  int wait_time;               // (Optional) For tracking wait time if needed
 };
 
 extern struct proc proc[NPROC];

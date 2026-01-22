@@ -26,6 +26,15 @@ extern char trampoline[]; // trampoline.S
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
 
+// Simple Linear Congruential Generator
+int
+random_at_most(int max) {
+  static unsigned long next = 1;
+  next = next * 1103515245 + 12345;
+  return (unsigned int)(next/65536) % 32768 % max; 
+  // Note: Standard rand() implementation logic adapted for kernel
+}
+
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
@@ -126,6 +135,15 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+
+  // MLFQ INITIALIZATION
+  p->tickets = 1;              // Default 1 ticket
+  p->priority = 0;             // Start at highest priority (0)
+  p->ticks_consumed = 0;
+  
+  acquire(&tickslock);
+  p->ctime = ticks;            // Record creation time
+  release(&tickslock);
 
   // for syscount
   p->sys_mask = 0;
@@ -348,6 +366,13 @@ int fork(void)
 
   safestrcpy(np->name, p->name, sizeof(p->name));
 
+  // MLFQ INITIALIZATION
+  np->tickets = p->tickets; // Inherit tickets
+  np->priority = 0;         // Reset priority for new child
+  np->ticks_consumed = 0;
+
+  pid = np->pid;
+
   // for syscount
   np->sys_mask = p->sys_mask; // inherit the same mask
   np->sys_count = 0; // Child starts with 0, will add to parent on exit
@@ -518,38 +543,131 @@ int wait(uint64 addr)
 // Each CPU calls scheduler() after setting itself up.
 // Scheduler never returns.  It loops, doing:
 //  - choose a process to run.
-//  - swtch to start running that process.
+//  - switch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
-void scheduler(void)
+
+void
+scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-
+  
   c->proc = 0;
-  for (;;)
-  {
-    // Avoid deadlock by ensuring that devices can interrupt.
+  for(;;){
+    // Enable interrupts on this processor.
     intr_on();
 
-    for (p = proc; p < &proc[NPROC]; p++)
-    {
+#ifdef LBS
+    // ------------------------------------------
+    // LOTTERY BASED SCHEDULING
+    // ------------------------------------------
+    int total_tickets = 0;
+    struct proc *winner = 0;
+
+    // 1. Calculate total tickets
+    for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
-      if (p->state == RUNNABLE)
-      {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
+      if(p->state == RUNNABLE) {
+        total_tickets += p->tickets;
+      }
+      release(&p->lock);
+    }
+
+    if(total_tickets > 0) {
+      int winning_ticket = random_at_most(total_tickets);
+      int current_ticket_count = 0;
+      
+      // 2. Find the candidate winner
+      for(p = proc; p < &proc[NPROC]; p++) {
+        acquire(&p->lock);
+        if(p->state == RUNNABLE) {
+          current_ticket_count += p->tickets;
+          if(current_ticket_count > winning_ticket) {
+            winner = p;
+            release(&p->lock);
+            break;
+          }
+        }
+        release(&p->lock);
+      }
+      
+      // 3. The Twist: Check for earlier arrival with same tickets
+      if(winner) {
+        acquire(&winner->lock); // Lock candidate
+        // We need to verify if it is still runnable
+        if(winner->state == RUNNABLE) {
+            struct proc *p2;
+            for(p2 = proc; p2 < &proc[NPROC]; p2++){
+                if(p2 == winner) continue;
+                acquire(&p2->lock);
+                if(p2->state == RUNNABLE && 
+                   p2->tickets == winner->tickets && 
+                   p2->ctime < winner->ctime) {
+                       // Found a better candidate (earlier arrival)
+                       release(&winner->lock);
+                       winner = p2; // Switch winner (keep p2 locked)
+                       // Continue searching in case there is an even earlier one
+                } else {
+                    release(&p2->lock);
+                }
+            }
+            
+            // Run the final winner
+            // Note: winner is currently locked
+            winner->state = RUNNING;
+            c->proc = winner;
+            swtch(&c->context, &winner->context);
+            c->proc = 0;
+        }
+        release(&winner->lock);
+      }
+    }
+#elif defined MLFQ
+    // ------------------------------------------
+    // MULTI LEVEL FEEDBACK QUEUE
+    // ------------------------------------------
+    struct proc *p_found = 0;
+
+    // Iterate through priorities 0 to 3
+    for(int prio = 0; prio < 4; prio++) {
+        // Find a runnable process at this priority level
+        // Note: This simple loop approximates RR at each level
+        for(p = proc; p < &proc[NPROC]; p++) {
+            acquire(&p->lock);
+            if(p->state == RUNNABLE && p->priority == prio) {
+                p_found = p;
+                p_found->state = RUNNING;
+                c->proc = p_found;
+                swtch(&c->context, &p_found->context);
+                c->proc = 0;
+                release(&p->lock);
+                p_found = 0; // Reset
+                
+                // CRITICAL: After running a process, we must restart the search 
+                // from Priority 0 to ensure we obey the "Preempt if higher priority" rule.
+                // We break out of the process loop AND the priority loop.
+                goto mlfq_restart; 
+            }
+            release(&p->lock);
+        }
+    }
+    mlfq_restart:; // Label to restart loop
+#else
+    // ------------------------------------------
+    // DEFAULT ROUND ROBIN
+    // ------------------------------------------
+    for(p = proc; p < &proc[NPROC]; p++) {
+      acquire(&p->lock);
+      if(p->state == RUNNABLE) {
         p->state = RUNNING;
         c->proc = p;
         swtch(&c->context, &p->context);
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
         c->proc = 0;
       }
       release(&p->lock);
     }
+#endif
   }
 }
 
@@ -761,8 +879,10 @@ void procdump(void)
       state = states[p->state];
     else
       state = "???";
-    printf("%d %s %s", p->pid, state, p->name);
-    printf("\n");
+      
+    printf("%d\t%s\t%s\t%d\t%d\t%d\n", 
+           p->pid, state, p->name, 
+           p->tickets, p->priority, p->ticks_consumed);
   }
 }
 

@@ -10,6 +10,21 @@ struct spinlock tickslock;
 uint ticks;
 
 extern char trampoline[], uservec[], userret[];
+extern void yield(void);
+
+// MLFQ constants
+int time_slice[4] = {1, 4, 8, 16}; 
+
+// Helper to boost priorities
+void boost_priorities() {
+  struct proc *p;
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    p->priority = 0;
+    p->ticks_consumed = 0; // Reset slice usage
+    release(&p->lock);
+  }
+}
 
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
@@ -81,7 +96,7 @@ void usertrap(void)
   // CHECK FOR TIMER INTERRUPT
   if(which_dev == 2) { 
     // It's a timer tick.
-    
+
     // 1. Is an alarm set? (interval != 0)
     if(p->alarm_interval != 0) {
         
@@ -101,8 +116,34 @@ void usertrap(void)
           p->alarm_ticks = 0;                   // Reset tick counter
       }
     }
+#ifdef MLFQ
+    struct proc *p = myproc();
     
+    // 1. Update runtime in current queue
+    p->ticks_consumed++;
+    
+    // 2. Check for Priority Demotion
+    if(p->ticks_consumed >= time_slice[p->priority]) {
+        if(p->priority < 3) {
+            p->priority++; // Demote
+        }
+        p->ticks_consumed = 0; // Reset counter for new queue
+    }
+    
+    // 3. Check for Priority Boosting (Every 48 ticks system-wide)
+    // We can use the global 'ticks' variable
+    if(ticks % 48 == 0) {
+        boost_priorities();
+    }
+    
+    // 4. Always yield on timer tick in MLFQ to allow 
+    // scheduler to pick higher priority process if one became runnable
     yield();
+
+#else
+  // Default RR and LBS behavior: yield on every tick
+    yield();
+#endif
   }
   usertrapret();
 }

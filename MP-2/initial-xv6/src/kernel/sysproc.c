@@ -160,3 +160,19 @@ sys_sigreturn(void)
   // The program will resume returning whatever value it was processing before interruption.
   return p->trapframe->a0; 
 }
+
+uint64
+sys_settickets(void)
+{
+  int n;
+  argint(0, &n);
+  
+  if(n < 1) return -1; // Must have at least 1 ticket
+  
+  struct proc *p = myproc();
+  acquire(&p->lock);
+  p->tickets = n;
+  release(&p->lock);
+  
+  return n; // Return the number of tickets set
+}

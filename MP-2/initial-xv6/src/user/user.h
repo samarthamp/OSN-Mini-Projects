@@ -26,6 +26,7 @@ int waitx(int*, int* /*wtime*/, int* /*rtime*/);
 int getSysCount(int);
 int sigalarm(int, void(*)());
 int sigreturn(void);
+int settickets(int);
 
 // ulib.c
 int stat(const char*, struct stat*);

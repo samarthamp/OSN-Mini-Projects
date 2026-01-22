@@ -61,6 +61,9 @@ CFLAGS += -MD
 CFLAGS += -mcmodel=medany
 CFLAGS += -ffreestanding -fno-common -nostdlib -mno-relax
 CFLAGS += -I.
+ifdef SCHEDULER
+	CFLAGS += -D$(SCHEDULER)
+endif
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 
 # Disable PIE when possible (for Ubuntu 16.10 toolchain)
@@ -135,6 +138,8 @@ UPROGS=\
 	$U/_schedulertest\
 	$U/_syscount\
 	$U/_alarmtest\
+	$U/_lbstest\
+	$U/_mlfqtest\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
