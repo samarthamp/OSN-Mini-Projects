@@ -78,10 +78,32 @@ void usertrap(void)
   if (killed(p))
     exit(-1);
 
-  // give up the CPU if this is a timer interrupt.
-  if (which_dev == 2)
-    yield();
+  // CHECK FOR TIMER INTERRUPT
+  if(which_dev == 2) { 
+    // It's a timer tick.
+    
+    // 1. Is an alarm set? (interval != 0)
+    if(p->alarm_interval != 0) {
+        
+      // 2. Increment tick counter
+      p->alarm_ticks++;
 
+      // 3. Have we reached the limit? AND make sure we aren't already in a handler!
+      if(p->alarm_ticks >= p->alarm_interval && p->alarm_active == 0) {
+          
+          // 4. Save the state! 
+          // We copy the current registers (trapframe) to our backup (alarm_tf)
+          *p->alarm_tf = *p->trapframe;
+
+          // 5. Setup execution for the handler
+          p->trapframe->epc = p->alarm_handler; // Set Program Counter to handler function
+          p->alarm_active = 1;                  // Lock it so we don't re-enter
+          p->alarm_ticks = 0;                   // Reset tick counter
+      }
+    }
+    
+    yield();
+  }
   usertrapret();
 }
 

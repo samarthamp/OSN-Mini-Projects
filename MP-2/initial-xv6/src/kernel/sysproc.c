@@ -120,3 +120,43 @@ sys_getSysCount(void)
   myproc()->sys_count = 0;
   return 0;
 }
+
+uint64
+sys_sigalarm(void)
+{
+  int n;
+  uint64 fn;
+  
+  // Fetch arguments: interval (n) and handler function address (fn)
+  argint(0, &n);
+  argaddr(1, &fn);
+  
+  struct proc *p = myproc();
+  p->alarm_interval = n;
+  p->alarm_handler = fn;
+  p->alarm_ticks = 0; // Reset counter
+  
+  return 0;
+}
+
+uint64
+sys_sigreturn(void)
+{
+  struct proc *p = myproc();
+  
+  // If we aren't handling an alarm, this call is invalid
+  if(p->alarm_active == 0)
+      return -1;
+
+  // Restore the saved trapframe (registers)
+  // This overwrites the current registers with the values from BEFORE the handler ran
+  *p->trapframe = *p->alarm_tf;
+  
+  // We are done handling the alarm
+  p->alarm_active = 0;
+  
+  // Returning 0 here actually doesn't matter much because 
+  // p->trapframe->a0 (return value register) was just restored from the backup!
+  // The program will resume returning whatever value it was processing before interruption.
+  return p->trapframe->a0; 
+}

@@ -12,6 +12,8 @@ void periodic();
 void slow_handler();
 void dummy_handler();
 
+volatile static int count;
+
 int main(int argc, char *argv[])
 {
     test0();
@@ -20,8 +22,6 @@ int main(int argc, char *argv[])
     test3();
     exit(0);
 }
-
-volatile static int count;
 
 void periodic()
 {

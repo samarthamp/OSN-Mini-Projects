@@ -123,6 +123,13 @@ struct proc
   // for syscount
   int sys_mask;                // mask of the syscall to trace
   int sys_count;               // count of how many times it was called
+
+  // SIGALARM FIELDS
+  int alarm_interval;          // How many ticks between alarms (0 = disabled)
+  uint64 alarm_handler;        // Address of the user handler function
+  int alarm_ticks;             // Ticks passed since last alarm
+  struct trapframe *alarm_tf;  // Copy of trapframe to restore after handler
+  int alarm_active;            // Flag to prevent re-entrant alarms (handler calling handler)
 };
 
 extern struct proc proc[NPROC];
